@@ -17,12 +17,6 @@ end entity;
 
 architecture rtl of subtrator_menos_um is
 begin
-    process(qnt_atual, subtr)
-    begin
-        if subtr = '1' and qnt_atual > 0 then
-            qnt_nova <= qnt_atual - 1;  -- decrementa 1
-        else
-            qnt_nova <= qnt_atual;      -- mantém valor
-        end if;
-    end process;
+    qnt_nova <= qnt_atual - 1 when ((subtr = '1') and (qnt_atual > 0))
+    else qnt_atual;
 end architecture;
