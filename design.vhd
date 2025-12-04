@@ -16,11 +16,16 @@ entity Maquina_Bebidas_Top is
         sw_sel_cafe     : in  STD_LOGIC;
         sw_sel_cha      : in  STD_LOGIC;
 
+        sw_lcd_concluido : in STD_LOGIC;
+
         -- Saídas Visuais
         led_troco       : out STD_LOGIC;
         led_devolver    : out STD_LOGIC;
-        led_erro        : out STD_LOGIC;
         led_finalizado  : out STD_LOGIC;
+        
+        -- Saída para ver qual mensagem o LCD deveria mostrar
+        -- 000: Nada, 001: Preparando, 010: Pronto, 011: Erro Agua, 100: Erro
+        leds_debug_lcd  : out STD_LOGIC_VECTOR(2 downto 0);
         
         -- Saída de valor (Troco)
         val_troco_out   : out unsigned(2 downto 0);
@@ -33,14 +38,20 @@ end Maquina_Bebidas_Top;
 architecture Structural of Maquina_Bebidas_Top is
 
     -- =========================================================================
-    -- 1. DECLARAÇÃO DOS COMPONENTES (Copiados dos seus arquivos)
+    -- 1. DECLARAÇÃO DOS COMPONENTES
     -- =========================================================================
     
     component Controladora is
         Port ( 
             clk, rst, ligar, interromper : in STD_LOGIC;
             ficha_detectada, sel_cafe, sel_cha, erro_estoque, pronto_timer : in STD_LOGIC;
-            cont_reset, cont_start, agua_en, cafe_en, cha_en, troco_normal, devolver_tudo, msg_erro, finalizado : out STD_LOGIC
+            
+            lcd_concluido : in STD_LOGIC;
+
+            cont_reset, cont_start, agua_en, cafe_en, cha_en, devolver_tudo, finalizado : out STD_LOGIC;
+
+            troco_normal : out STD_LOGIC;
+            seletor_lcd  : out STD_LOGIC_VECTOR(2 downto 0)
         );
     end component;
 
@@ -83,7 +94,7 @@ architecture Structural of Maquina_Bebidas_Top is
     end component;
 
     -- =========================================================================
-    -- 2. SINAIS INTERNOS (Os fios do circuito)
+    --  2. SINAIS INTERNOS
     -- =========================================================================
 
     -- Sinais de Controle (Saídas da FSM)
@@ -109,7 +120,7 @@ architecture Structural of Maquina_Bebidas_Top is
 
     -- Dados de Tempo
     signal s_tempo_unsigned : unsigned(4 downto 0);
-    signal s_tempo_vector   : std_logic_vector(5 downto 0); -- Convertido para o comparador
+    signal s_tempo_vector   : std_logic_vector(4 downto 0); -- Convertido para o comparador
 
     -- Dados de Troco
     signal s_calculo_troco : unsigned(2 downto 0);
@@ -131,15 +142,19 @@ begin
         sel_cha         => sw_sel_cha,
         erro_estoque    => s_erro_estoque, -- Sinal combinado calculado abaixo
         pronto_timer    => s_pronto_timer,
+
+        lcd_concluido   => sw_lcd_concluido,
+        
         cont_reset      => s_cont_reset,
         cont_start      => s_cont_start,
         agua_en         => s_agua_en,
         cafe_en         => s_cafe_en,
         cha_en          => s_cha_en,
+        
         troco_normal    => led_troco,
         devolver_tudo   => led_devolver,
-        msg_erro        => led_erro,
-        finalizado      => led_finalizado
+        finalizado      => led_finalizado,
+        seletor_lcd     => leds_debug_lcd
     );
 
     -- -------------------------------------------------------------------------
@@ -184,6 +199,9 @@ begin
     U_CONTADOR: contador
     port map ( clk => clk, reset => s_cont_reset, enable => s_cont_start, tempo => s_tempo_unsigned );
 
+    -- Converte o unsigned do contador para o vector do comparador
+    s_tempo_vector <= std_logic_vector(s_tempo_unsigned);
+
     U_COMP_TEMPO: comp_tempo
     port map ( tempo => s_tempo_vector, saida => s_pronto_timer );
 
@@ -217,5 +235,6 @@ begin
 
     -- Debug
     debug_estoque_cafe <= s_cafe_atual;
+
 
 end Structural;
