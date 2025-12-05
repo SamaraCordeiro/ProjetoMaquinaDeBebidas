@@ -1,0 +1,153 @@
+LIBRARY ieee;
+USE ieee.std_logic_1164.ALL;
+
+ENTITY lcd_user_logic IS
+    PORT(
+        clk         : IN  STD_LOGIC;
+        lcd_busy    : IN  STD_LOGIC;
+        reset_n_in  : IN  STD_LOGIC;
+        
+        -- Entrada de Controle vinda da Controladora (Agora com 3 bits)
+        -- "000": Limpar / Nada
+        -- "001": Preparando
+        -- "010": Pronto
+        -- "011": Erro de Água
+        -- "100": Erro de Estoque
+        seletor_lcd : IN  STD_LOGIC_VECTOR(2 DOWNTO 0); 
+
+        -- Saída de Feedback para a Controladora (Necessário para destravar a FSM)
+        lcd_concluido : OUT STD_LOGIC;
+
+        -- Sinais para o Driver Físico (lcd_controller)
+        lcd_enable  : BUFFER STD_LOGIC;
+        lcd_bus     : OUT STD_LOGIC_VECTOR(9 DOWNTO 0);
+        lcd_clk     : OUT STD_LOGIC;
+        reset_n     : OUT STD_LOGIC
+    );
+END lcd_user_logic;
+
+ARCHITECTURE behavior OF lcd_user_logic IS
+    -- Ajustado para 3 bits para bater com a entrada
+    SIGNAL last_seletor : STD_LOGIC_VECTOR(2 DOWNTO 0) := "000";
+BEGIN
+
+    PROCESS(clk, reset_n_in)
+        VARIABLE char : INTEGER RANGE 0 TO 14 := 0;
+    BEGIN
+        IF reset_n_in = '0' THEN
+            char := 0;
+            lcd_enable <= '0';
+            lcd_bus <= (OTHERS => '0');
+            last_seletor <= "000";
+            lcd_concluido <= '0';
+
+        ELSIF rising_edge(clk) THEN
+            
+            -- Reinicia o contador se a mensagem mudar abruptamente
+            IF seletor_lcd /= last_seletor THEN
+                char := 0;
+                last_seletor <= seletor_lcd;
+                lcd_concluido <= '0'; -- Reseta o aviso de conclusão
+            END IF;
+
+            -- Máquina de envio
+            IF (lcd_busy = '0' AND lcd_enable = '0') THEN
+                
+                -- Enquanto não chegar no caractere 12, continua escrevendo
+                IF (char < 12) THEN
+                    char := char + 1;
+                    lcd_enable <= '1';
+                    lcd_concluido <= '0'; -- Ainda trabalhando
+                    
+                    -- LÓGICA HARDCODED (DIRETA)
+                    -- Formato: "10" (RS=1/RW=0) & X"ASCII HEX"
+                    CASE seletor_lcd IS
+                        
+                        -- CASO 001: "PREPARANDO" (Estava errado no original)
+                        WHEN "001" =>
+                            CASE char IS
+                                WHEN 1 => lcd_bus <= "10" & X"50"; -- P
+                                WHEN 2 => lcd_bus <= "10" & X"52"; -- R
+                                WHEN 3 => lcd_bus <= "10" & X"45"; -- E
+                                WHEN 4 => lcd_bus <= "10" & X"50"; -- P
+                                WHEN 5 => lcd_bus <= "10" & X"41"; -- A
+                                WHEN 6 => lcd_bus <= "10" & X"52"; -- R
+                                WHEN 7 => lcd_bus <= "10" & X"41"; -- A
+                                WHEN 8 => lcd_bus <= "10" & X"4E"; -- N
+                                WHEN 9 => lcd_bus <= "10" & X"44"; -- D
+                                WHEN 10=> lcd_bus <= "10" & X"4F"; -- O
+                                WHEN OTHERS => lcd_bus <= "10" & X"20"; -- Espaço
+                            END CASE;
+
+                        -- CASO 010: "PRONTO"
+                        WHEN "010" =>
+                            CASE char IS
+                                WHEN 1 => lcd_bus <= "10" & X"50"; -- P
+                                WHEN 2 => lcd_bus <= "10" & X"52"; -- R
+                                WHEN 3 => lcd_bus <= "10" & X"4F"; -- O
+                                WHEN 4 => lcd_bus <= "10" & X"4E"; -- N
+                                WHEN 5 => lcd_bus <= "10" & X"54"; -- T
+                                WHEN 6 => lcd_bus <= "10" & X"4F"; -- O
+                                WHEN OTHERS => lcd_bus <= "10" & X"20"; 
+                            END CASE;
+
+                        -- CASO 011: "ERRO AGUA"
+                        WHEN "011" =>
+                            CASE char IS
+                                WHEN 1 => lcd_bus <= "10" & X"45"; -- E
+                                WHEN 2 => lcd_bus <= "10" & X"52"; -- R
+                                WHEN 3 => lcd_bus <= "10" & X"52"; -- R
+                                WHEN 4 => lcd_bus <= "10" & X"4F"; -- O
+                                WHEN 5 => lcd_bus <= "10" & X"20"; -- (Espaço)
+                                WHEN 6 => lcd_bus <= "10" & X"41"; -- A
+                                WHEN 7 => lcd_bus <= "10" & X"47"; -- G
+                                WHEN 8 => lcd_bus <= "10" & X"55"; -- U
+                                WHEN 9 => lcd_bus <= "10" & X"41"; -- A
+                                WHEN OTHERS => lcd_bus <= "10" & X"20"; 
+                            END CASE;
+
+                        -- CASO 100: "ERRO ESTOQUE"
+                        WHEN "100" =>
+                            CASE char IS
+                                WHEN 1 => lcd_bus <= "10" & X"45"; -- E
+                                WHEN 2 => lcd_bus <= "10" & X"52"; -- R
+                                WHEN 3 => lcd_bus <= "10" & X"52"; -- R
+                                WHEN 4 => lcd_bus <= "10" & X"4F"; -- O
+                                WHEN 5 => lcd_bus <= "10" & X"20"; -- (Espaço)
+                                WHEN 6 => lcd_bus <= "10" & X"45"; -- E
+                                WHEN 7 => lcd_bus <= "10" & X"53"; -- S
+                                WHEN 8 => lcd_bus <= "10" & X"54"; -- T
+                                WHEN 9 => lcd_bus <= "10" & X"4F"; -- O
+                                WHEN 10=> lcd_bus <= "10" & X"51"; -- Q
+                                WHEN 11=> lcd_bus <= "10" & X"55"; -- U
+                                WHEN 12=> lcd_bus <= "10" & X"45"; -- E
+                                WHEN OTHERS => lcd_bus <= "10" & X"20";
+                            END CASE;
+
+                        -- INTERROMPIDO (Não estava na lista da Controladora original, mas mantido caso precise)
+                        -- Se a controladora mandar um código não mapeado (ex: 000), ele imprime espaços.
+                        WHEN OTHERS =>
+                            lcd_bus <= "10" & X"20"; -- Espaço em branco
+                    END CASE;
+
+                ELSE
+                    -- Fim da contagem de caracteres (Já escreveu os 12)
+                    lcd_enable <= '0';
+                    
+                    -- !!! IMPORTANTE !!!
+                    -- Avisa a Controladora que terminou de escrever.
+                    -- Isso permite que a Controladora saia do estado de espera.
+                    lcd_concluido <= '1';
+                END IF;
+
+            ELSE
+                -- Controlador ocupado ou aguardando handshake
+                lcd_enable <= '0';
+            END IF;
+        END IF;
+    END PROCESS;
+
+    reset_n <= '1';
+    lcd_clk <= clk;
+
+END behavior;
