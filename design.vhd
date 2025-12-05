@@ -2,56 +2,69 @@ library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
 
-entity Maquina_Bebidas_Top is
+entity maquina_bebidas_top is
     Port (
-        clk             : in  STD_LOGIC;
-        rst             : in  STD_LOGIC; -- Reset geral do sistema
+        -- Clock da Placa (50 MHz)
+        clock_50        : in  STD_LOGIC;
+        
+        -- Switches (18 chaves)
+        sw              : in  STD_LOGIC_VECTOR(17 downto 0);
+        
+        -- Botões (4 botões)
+        key             : in  STD_LOGIC_VECTOR(3 downto 0);
 
-        -- Entradas do Usuário
-        btn_ligar       : in  STD_LOGIC;
-        sw_interromper  : in  STD_LOGIC;
+        -- LEDs vermelhos e verdes
+        ledr            : out STD_LOGIC_VECTOR(17 downto 0);
+        ledg            : out STD_LOGIC_VECTOR(8 downto 0);
         
-        -- Entradas de Configuração/Sensores
-        sw_fichas       : in  STD_LOGIC_VECTOR(1 downto 0); -- Quantidade de fichas
-        sw_sel_cafe     : in  STD_LOGIC;
-        sw_sel_cha      : in  STD_LOGIC;
-
-        sw_lcd_concluido : in STD_LOGIC;
-
-        -- Saídas Visuais
-        led_troco       : out STD_LOGIC;
-        led_devolver    : out STD_LOGIC;
-        led_finalizado  : out STD_LOGIC;
-        
-        -- Saída para ver qual mensagem o LCD deveria mostrar
-        -- 000: Nada, 001: Preparando, 010: Pronto, 011: Erro Agua, 100: Erro
-        leds_debug_lcd  : out STD_LOGIC_VECTOR(2 downto 0);
-        
-        -- Saída de valor (Troco)
-        val_troco_out   : out unsigned(2 downto 0);
-        
-        -- Debug (Opcional: para ver se o estoque está descendo)
-        debug_estoque_cafe : out unsigned(1 downto 0)
+        -- Pinos físicos do LCD
+        lcd_data        : out STD_LOGIC_VECTOR(7 downto 0);
+        lcd_rw          : out STD_LOGIC;
+        lcd_en          : out STD_LOGIC;
+        lcd_rs          : out STD_LOGIC;
+        lcd_on          : out STD_LOGIC;
+        lcd_blon        : out STD_LOGIC
     );
-end Maquina_Bebidas_Top;
+end maquina_bebidas_top;
 
-architecture Structural of Maquina_Bebidas_Top is
+architecture Structural of maquina_bebidas_top is
 
     -- =========================================================================
-    -- 1. DECLARAÇÃO DOS COMPONENTES
+    -- 1. COMPONENTES (Controladora, Datapath e LCD)
     -- =========================================================================
     
     component Controladora is
-        Port ( 
+    Port ( 
             clk, rst, ligar, interromper : in STD_LOGIC;
             ficha_detectada, sel_cafe, sel_cha, erro_estoque, pronto_timer : in STD_LOGIC;
-            
-            lcd_concluido : in STD_LOGIC;
+            lcd_concluido : in STD_LOGIC; -- O sinal que vem do LCD avisando que terminou
 
             cont_reset, cont_start, agua_en, cafe_en, cha_en, devolver_tudo, finalizado : out STD_LOGIC;
-
             troco_normal : out STD_LOGIC;
             seletor_lcd  : out STD_LOGIC_VECTOR(2 downto 0)
+        );
+    end component;
+
+    -- Componentes do LCD
+    component lcd_user_logic is
+        PORT(
+            clk, lcd_busy, reset_n_in : IN STD_LOGIC;
+            seletor_lcd   : IN STD_LOGIC_VECTOR(2 DOWNTO 0);
+            lcd_concluido : OUT STD_LOGIC;
+            lcd_enable    : BUFFER STD_LOGIC;
+            lcd_bus       : OUT STD_LOGIC_VECTOR(9 DOWNTO 0);
+            lcd_clk, reset_n : OUT STD_LOGIC
+        );
+    end component;
+
+    component lcd_controller is
+        PORT(
+            clk, reset_n, lcd_enable : IN STD_LOGIC;
+            lcd_bus    : IN STD_LOGIC_VECTOR(9 DOWNTO 0);
+            busy       : OUT STD_LOGIC;
+            rw, rs, e  : OUT STD_LOGIC;
+            lcd_data   : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
+            lcd_on, lcd_blon : OUT STD_LOGIC
         );
     end component;
 
@@ -96,7 +109,15 @@ architecture Structural of Maquina_Bebidas_Top is
     -- =========================================================================
     --  2. SINAIS INTERNOS
     -- =========================================================================
+    signal clk             : std_logic;
+    signal rst             : std_logic;
+    signal btn_ligar       : std_logic;
+    signal sw_interromper  : std_logic;
+    signal sw_sel_cafe     : std_logic;
+    signal sw_sel_cha      : std_logic;
+    signal sw_fichas       : std_logic_vector(1 downto 0);
 
+    
     -- Sinais de Controle (Saídas da FSM)
     signal s_cont_reset, s_cont_start : std_logic;
     signal s_agua_en, s_cafe_en, s_cha_en : std_logic;
@@ -124,11 +145,35 @@ architecture Structural of Maquina_Bebidas_Top is
 
     -- Dados de Troco
     signal s_calculo_troco : unsigned(2 downto 0);
+    signal s_val_troco_out : unsigned(2 downto 0);
+
+    -- Sinais para conexão com o LCD
+    signal w_seletor_lcd   : std_logic_vector(2 downto 0);
+    signal w_lcd_concluido : std_logic;
+    signal w_lcd_enable    : std_logic;
+    signal w_lcd_bus       : std_logic_vector(9 downto 0);
+    signal w_lcd_busy      : std_logic;
+    signal w_reset_n_lcd   : std_logic; -- Reset invertido pro LCD
 
 begin
+    -- =========================================================================
+    -- 3. INSTANCIAÇÃO E MAPEAMENTO DOS PINOS DA PLACA
+    -- =========================================================================
+    clk <= clock_50;
+    rst <= sw(17);             -- Switch 17 é o Reset Geral
+
+    btn_ligar <= not key(0); -- Como os botões da DE2 são invertidos (0 quando aperta). Colocamos um not p/resolver isso
+
+    sw_interromper <= sw(0);   -- Switch 0 interrompe
+    sw_sel_cafe    <= sw(1);   -- Switch 1 para o café
+    sw_sel_cha     <= sw(2);   -- Switch 2 para o chá
+    sw_fichas      <= sw(16 downto 15); -- Switches 16 e 15 simulam as fichas
+    
+    -- Reset pro LCD (ele precisa ser 0 pra resetar, então invertemos o rst)
+    w_reset_n_lcd <= not sw(17);
 
     -- =========================================================================
-    -- 3. INSTANCIAÇÃO E MAPEAMENTO
+    -- 4. INSTANCIAÇÃO (Ligando os blocos)
     -- =========================================================================
 
     U_CONTROLADORA: Controladora
@@ -140,26 +185,61 @@ begin
         ficha_detectada => s_ficha_detectada,
         sel_cafe        => sw_sel_cafe,
         sel_cha         => sw_sel_cha,
-        erro_estoque    => s_erro_estoque, -- Sinal combinado calculado abaixo
+        erro_estoque    => s_erro_estoque,
         pronto_timer    => s_pronto_timer,
 
-        lcd_concluido   => sw_lcd_concluido,
+        -- Ligando o fio do LCD
+        lcd_concluido   => w_lcd_concluido,
         
         cont_reset      => s_cont_reset,
         cont_start      => s_cont_start,
         agua_en         => s_agua_en,
         cafe_en         => s_cafe_en,
         cha_en          => s_cha_en,
-        
-        troco_normal    => led_troco,
-        devolver_tudo   => led_devolver,
-        finalizado      => led_finalizado,
-        seletor_lcd     => leds_debug_lcd
+
+        -- Saídas visuais (LEDs da placa)
+        troco_normal    => ledg(0), -- Led Verde 0
+        devolver_tudo   => ledr(0), -- Led Vermelho 0
+        finalizado      => ledg(7), -- Led Verde 7
+        seletor_lcd     => w_seletor_lcd
     );
 
+    -- LÓGICA DO LCD (Converte o código da FSM em texto)
+    U_LCD_USER: lcd_user_logic
+    port map (
+        clk           => clk,
+        lcd_busy      => w_lcd_busy,
+        reset_n_in    => w_reset_n_lcd,
+        seletor_lcd   => w_seletor_lcd,
+        lcd_concluido => w_lcd_concluido,
+        lcd_enable    => w_lcd_enable,
+        lcd_bus       => w_lcd_bus,
+        lcd_clk       => open,
+        reset_n       => open
+    );
+        
+    -- CONTROLADOR DO LCD (Mexe nos pinos físicos da tela)
+    U_LCD_DRIVER: lcd_controller
+    port map (
+        clk        => clk,
+        reset_n    => w_reset_n_lcd,
+        lcd_enable => w_lcd_enable,
+        lcd_bus    => w_lcd_bus,
+        busy       => w_lcd_busy,
+        
+        -- Pinos físicos externos
+        rw         => lcd_rw,
+        rs         => lcd_rs,
+        e          => lcd_en,
+        lcd_data   => lcd_data,
+        lcd_on     => lcd_on,
+        lcd_blon   => lcd_blon
+    );
+        
     -- -------------------------------------------------------------------------
-    -- BLOCO DE CAFÉ (Registrador + Subtrator + Verificador)
+    -- 5. DATAPATH
     -- -------------------------------------------------------------------------
+    -- Bloco para o café
     U_REG_CAFE: reg_cafe
     port map ( clk => clk, cafe_set => rst, cafe_en => s_cafe_en, cafe_atual => s_cafe_atual, cafe_prox => s_cafe_prox );
 
@@ -169,9 +249,7 @@ begin
     U_CHECK_CAFE: comp_maior_que_zero
     port map ( qntd => std_logic_vector(s_cafe_atual), saida => s_cafe_ok );
 
-    -- -------------------------------------------------------------------------
-    -- BLOCO DE CHÁ
-    -- -------------------------------------------------------------------------
+    -- Bloco para o chá
     U_REG_CHA: reg_cha
     port map ( clk => clk, cha_set => rst, cha_en => s_cha_en, cha_atual => s_cha_atual, cha_prox => s_cha_prox );
 
@@ -181,9 +259,7 @@ begin
     U_CHECK_CHA: comp_maior_que_zero
     port map ( qntd => std_logic_vector(s_cha_atual), saida => s_cha_ok );
 
-    -- -------------------------------------------------------------------------
-    -- BLOCO DE ÁGUA
-    -- -------------------------------------------------------------------------
+    -- Bloco para a água
     U_REG_AGUA: reg_agua
     port map ( clk => clk, agua_set => rst, agua_en => s_agua_en, agua_atual => s_agua_atual, agua_prox => s_agua_prox );
 
@@ -212,10 +288,10 @@ begin
     port map ( fichas_inseridas => sw_fichas, saida => s_ficha_detectada );
 
     U_REG_TROCO: reg_troco
-    port map ( clk => clk, reset => rst, fichas_2 => s_calculo_troco, troco => val_troco_out );
+    port map ( clk => clk, reset => rst, fichas_2 => s_calculo_troco, troco => s_val_troco_out );
 
     -- =========================================================================
-    -- 4. GLUE LOGIC (Lógica de Conexão e Adaptação)
+    -- 6. lÓGICA AUXILIAR (Lógica de Conexão e Adaptação)
     -- =========================================================================
 
     -- Lógica do Troco:
@@ -233,8 +309,10 @@ begin
                       '1' when (s_agua_ok = '0') else -- Falta de água trava tudo
                       '0';
 
-    -- Debug
-    debug_estoque_cafe <= s_cafe_atual;
-
+    -- Debug: mostrando algumas coisas nos LEDs vermelhos extras
+    ledr(17) <= rst; -- Ver se o reset tá apertado
+    ledr(1)  <= s_cafe_ok; -- Pra conferir se tem café
+    ledr(2)  <= s_cha_ok;  -- Pra conferir se tem chá
 
 end Structural;
+
