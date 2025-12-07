@@ -99,7 +99,7 @@ BEGIN
 
                     ELSIF (clk_count < (70 * freq)) THEN
                         -- lcd_data <= "00001100"; -- display on, cursor off
-                        lcd_data <= "00001101"; -- display on, cursor off, blink on
+                        lcd_data <= "00001100"; -- display on, cursor off, blink on
                         e <= '1';
 
                     ELSIF (clk_count < (120 * freq)) THEN
@@ -183,3 +183,4 @@ BEGIN
     END PROCESS;
 
 END controller;
+
