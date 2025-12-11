@@ -1,28 +1,41 @@
- -- Cecília Rodrigues, Samara Cordeiro, Vitor Alencar
- -- Turma N3
- 
-library IEEE;
-use IEEE.STD_LOGIC_1164.ALL;
-use IEEE.NUMERIC_STD.ALL;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
-entity reg_ficha is
-    Port (
-        clk         : in  std_logic;
-        ficha_reset : in  std_logic;               -- reset síncrono
-        ficha_en    : in  std_logic;               -- enable
-        fichas      : in  unsigned(2 downto 0);    -- fichas inseridas
-        fichas_final: out unsigned(2 downto 0)     -- valor armazenado
+entity reg_fichas is
+    port (
+        clk         : in std_logic;
+        reset       : in std_logic;
+        
+        fichas_set  : in std_logic; -- Sinal de controle (set/load)
+        fichas_en   : in std_logic; -- Enable (habilita escrita)
+        fichas_prox : in unsigned(3 downto 0); -- O próximo valor (ajuste os bits se necessário)
+        
+        -- Saída do registrador
+        fichas_q    : out unsigned(3 downto 0)
     );
-end reg_ficha;
+end entity;
 
-architecture arq of reg_fichas is
-    signal s_fichas_reg : unsigned(1 downto 0) := (others => '0'); 
+architecture rtl of reg_fichas is
 begin
 
-    s_fichas_reg <= '0'      when rising_edge(clk) and fichas_set = '1' else
-                  fichas_prox when rising_edge(clk) and fichas_en = '1';
-                  
-    -- Conecta o sinal interno à saída da entidade
-    fichas_atual <= s_fichas_reg;
+    process(clk, reset)
+    begin
+        if reset = '1' then
+            fichas_q <= (others => '0'); 
+            
+        elsif rising_edge(clk) then
+            
+            -- Lógica sugerida baseada nos nomes das suas variáveis
+            if fichas_set = '1' then
+                -- Se 'set' for ativo, talvez você queira carregar um valor fixo ou específico
+                fichas_q <= (others => '0'); -- Exemplo: reseta
+            elsif fichas_en = '1' then
+                -- Se 'en' for ativo, carrega o próximo valor (fichas_prox)
+                fichas_q <= fichas_prox;
+            end if;
+            
+        end if;
+    end process;
 
-end arq;
+end architecture;

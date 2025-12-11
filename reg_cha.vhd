@@ -1,28 +1,34 @@
- -- Cecília Rodrigues, Samara Cordeiro, Vitor Alencar
- -- Turma N3
- 
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
 
-entity reg_cha is
+entity reg_cha is -- Mude para reg_cha ou reg_agua nos outros arquivos
     Port (
-        clk        : in  std_logic;
-        cha_set    : in  std_logic;            -- seta quantidade inicial
-        cha_en     : in  std_logic;            -- habilitar a subtração
-        cha_atual  : out unsigned(1 downto 0); -- valor atualizado
-        cha_prox   : in  unsigned(1 downto 0) -- entrada do próximo estado
+        clk         : in  std_logic;
+        cha_set    : in  std_logic;            -- AGORA É O BOTÃO DE RECARGA (SW4, 5 ou 6)
+        cha_en     : in  std_logic;            -- Consumir
+        cha_atual  : out unsigned(1 downto 0); 
+        cha_prox   : in  unsigned(1 downto 0) 
     );
 end reg_cha;
 
-architecture arq of reg_cha is
-    signal s_cha_reg : unsigned(1 downto 0) := (others => '0'); 
+architecture arq of reg_cha is 
+    -- MUDANÇA 1: Inicializa com "00" (APAGADO/VAZIO)
+    signal s_cha_reg : unsigned(1 downto 0) := "00"; 
+    
 begin
-
-    s_cha_reg <= "11"      when rising_edge(clk) and cha_set = '1' else
-                  cha_prox when rising_edge(clk) and cha_en = '1';
+    process(clk, cha_set)
+    begin
+        -- Se apertar o Switch de recarga, enche o tanque
+        if cha_set = '1' then
+            s_cha_reg <= "11"; -- Enche para 3
+            
+        elsif rising_edge(clk) then
+            if cha_en = '1' then
+                s_cha_reg <= cha_prox;
+            end if;
+        end if;
+    end process;
                   
-    -- Conecta o sinal interno à saída da entidade
     cha_atual <= s_cha_reg;
-
 end arq;

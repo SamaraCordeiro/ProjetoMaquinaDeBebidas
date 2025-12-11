@@ -12,5 +12,5 @@ end entity;
 
 architecture rtl of comp_fichas is
 begin
-    saida <= '1' when fichas_inseridas = "10" else '0';
+    saida <= '1' when fichas_inseridas >= "10" else '0';
 end architecture;
